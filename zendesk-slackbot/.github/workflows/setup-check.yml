@@ -1,0 +1,104 @@
+name: Setup Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      setup_step:
+        description: 'What setup step are you on?'
+        required: true
+        default: 'initial'
+        type: choice
+        options:
+        - initial
+        - secrets_added
+        - first_test
+
+jobs:
+  setup-validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check Secrets Configuration
+      run: |
+        echo "🔍 Checking your setup configuration..."
+        
+        # Check if secrets are configured
+        missing_secrets=""
+        
+        if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]; then
+          missing_secrets="$missing_secrets SLACK_BOT_TOKEN"
+        fi
+        
+        if [ -z "${{ secrets.SLACK_CHANNEL_ID }}" ]; then
+          missing_secrets="$missing_secrets SLACK_CHANNEL_ID"
+        fi
+        
+        if [ -z "${{ secrets.ZENDESK_SUBDOMAIN }}" ]; then
+          missing_secrets="$missing_secrets ZENDESK_SUBDOMAIN"
+        fi
+        
+        if [ -z "${{ secrets.ZENDESK_EMAIL }}" ]; then
+          missing_secrets="$missing_secrets ZENDESK_EMAIL"
+        fi
+        
+        if [ -z "${{ secrets.ZENDESK_API_TOKEN }}" ]; then
+          missing_secrets="$missing_secrets ZENDESK_API_TOKEN"
+        fi
+        
+        if [ -z "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
+          missing_secrets="$missing_secrets GOOGLE_CREDENTIALS_JSON"
+        fi
+        
+        if [ -n "$missing_secrets" ]; then
+          echo "❌ Missing secrets:$missing_secrets"
+          echo ""
+          echo "📋 Please add these secrets in your repository settings:"
+          echo "   Settings → Secrets and variables → Actions → New repository secret"
+          echo ""
+          for secret in $missing_secrets; do
+            echo "   ➡️  $secret"
+          done
+          exit 1
+        else
+          echo "✅ All 6 required secrets are configured!"
+          echo ""
+          echo "🎉 Your setup looks good! You can now:"
+          echo "   1. Run the 'Monitor 1on1 Meetings' workflow in test mode"
+          echo "   2. Check your Slack channel for the test message"
+          echo "   3. Schedule a 1on1 meeting and wait for the magic! ✨"
+        fi
+    
+    - name: Setup Step Guidance
+      run: |
+        case "${{ github.event.inputs.setup_step }}" in
+          "initial")
+            echo "🚀 Welcome to Zendesk Slackbot setup!"
+            echo ""
+            echo "📋 Next steps:"
+            echo "   1. Set up your API integrations (Slack, Zendesk, Google)"
+            echo "   2. Add all 6 secrets to this repository"
+            echo "   3. Run this workflow again with 'secrets_added'"
+            ;;
+          "secrets_added")
+            echo "🔧 Great! You've added your secrets."
+            echo ""
+            echo "📋 Next steps:"
+            echo "   1. Go to the Actions tab"
+            echo "   2. Run 'Monitor 1on1 Meetings' workflow"
+            echo "   3. Enable 'Run in test mode'"
+            echo "   4. Check your Slack channel for the test message"
+            ;;
+          "first_test")
+            echo "🧪 Time to test your setup!"
+            echo ""
+            echo "📋 Testing checklist:"
+            echo "   1. Did you get a test message in Slack? ✅"
+            echo "   2. Are there any error messages in the workflow log? ❌"
+            echo "   3. Try scheduling a test 1on1 meeting with '1on1' in the title"
+            echo ""
+            echo "🎉 If everything works, you're all set!"
+            ;;
+        esac

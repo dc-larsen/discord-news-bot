@@ -1,0 +1,22 @@
+# Repository Topics (add these in GitHub repository settings)
+
+slack-bot
+zendesk
+github-actions
+automation
+customer-support
+performance-analytics
+1on1-meetings
+slack-integration
+zendesk-api
+google-calendar
+enterprise-ready
+devops
+ci-cd
+python
+api-integration
+customer-success
+support-management
+helpdesk
+bot
+workflow-automation

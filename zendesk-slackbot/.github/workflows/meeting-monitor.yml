@@ -1,0 +1,76 @@
+name: Monitor 1on1 Meetings
+
+on:
+  schedule:
+    # Run every 5 minutes during business hours (9 AM - 6 PM UTC, Mon-Fri)
+    - cron: '*/5 9-18 * * 1-5'
+  workflow_dispatch:
+    # Allow manual trigger for testing
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  check-meetings:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create Google credentials file
+      run: |
+        echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -d > credentials.json
+        chmod 600 credentials.json
+        
+    - name: Set up environment variables
+      run: |
+        echo "SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}" >> $GITHUB_ENV
+        echo "SLACK_CHANNEL_ID=${{ secrets.SLACK_CHANNEL_ID }}" >> $GITHUB_ENV
+        echo "ZENDESK_SUBDOMAIN=${{ secrets.ZENDESK_SUBDOMAIN }}" >> $GITHUB_ENV
+        echo "ZENDESK_EMAIL=${{ secrets.ZENDESK_EMAIL }}" >> $GITHUB_ENV
+        echo "ZENDESK_API_TOKEN=${{ secrets.ZENDESK_API_TOKEN }}" >> $GITHUB_ENV
+        echo "GOOGLE_CREDENTIALS_FILE=credentials.json" >> $GITHUB_ENV
+        
+    - name: Restore Google OAuth token
+      uses: actions/cache@v3
+      with:
+        path: token.json
+        key: google-oauth-token-${{ github.repository }}-${{ github.run_number }}
+        restore-keys: |
+          google-oauth-token-${{ github.repository }}-
+        
+    - name: Check for upcoming meetings
+      run: |
+        if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+          python github_actions_runner.py --test
+        else
+          python github_actions_runner.py --check
+        fi
+        
+    - name: Save Google OAuth token
+      uses: actions/cache/save@v3
+      if: always()
+      with:
+        path: token.json
+        key: google-oauth-token-${{ github.repository }}-${{ github.run_number }}
+        
+    - name: Clean up credentials
+      if: always()
+      run: |
+        rm -f credentials.json
+        # Additional cleanup for security
+        unset SLACK_BOT_TOKEN ZENDESK_API_TOKEN
