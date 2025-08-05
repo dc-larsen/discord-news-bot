@@ -93,7 +93,8 @@ class NewsBot:
             logger.info(f"Searching for messages after {cutoff_time} in #{channel.name}")
             
             async for message in channel.history(after=cutoff_time, oldest_first=True):
-                if message.id not in processed_ids and not message.author.bot:
+                # Include all messages except from this bot itself
+                if message.id not in processed_ids and message.author.id != self.client.user.id:
                     messages.append(message)
                     logger.debug(f"Found message: {message.id} from {message.author} at {message.created_at}")
             
@@ -105,7 +106,8 @@ class NewsBot:
                 try:
                     recent_messages = []
                     async for msg in channel.history(limit=5):
-                        recent_messages.append(f"{msg.author}: {msg.content[:50]}...")
+                        bot_indicator = " [BOT]" if msg.author.bot else ""
+                        recent_messages.append(f"{msg.author}{bot_indicator}: {msg.content[:50]}...")
                     
                     if recent_messages:
                         logger.info(f"Bot CAN read channel. Found {len(recent_messages)} recent messages:")
