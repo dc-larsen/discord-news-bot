@@ -39,9 +39,11 @@ class NewsBot:
         if not self.channel_id:
             raise ValueError("DISCORD_CHANNEL_ID environment variable is required")
         
-        # Initialize Discord client
+        # Initialize Discord client with comprehensive intents
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.guild_messages = True
+        intents.guilds = True
         self.client = discord.Client(intents=intents)
         
         # Initialize OpenAI client - simplified
@@ -88,15 +90,39 @@ class NewsBot:
         messages = []
         
         try:
+            logger.info(f"Searching for messages after {cutoff_time} in #{channel.name}")
+            
             async for message in channel.history(after=cutoff_time, oldest_first=True):
                 if message.id not in processed_ids and not message.author.bot:
                     messages.append(message)
+                    logger.debug(f"Found message: {message.id} from {message.author} at {message.created_at}")
             
             logger.info(f"Fetched {len(messages)} new messages from #{channel.name}")
+            
+            # If no messages found, let's check if we can see ANY messages
+            if len(messages) == 0:
+                logger.info("No new messages found. Checking if bot can read channel history...")
+                try:
+                    recent_messages = []
+                    async for msg in channel.history(limit=5):
+                        recent_messages.append(f"{msg.author}: {msg.content[:50]}...")
+                    
+                    if recent_messages:
+                        logger.info(f"Bot CAN read channel. Found {len(recent_messages)} recent messages:")
+                        for msg in recent_messages:
+                            logger.info(f"  - {msg}")
+                        logger.info("This suggests no NEW messages since cutoff time")
+                    else:
+                        logger.warning("Bot cannot read ANY messages from channel - permission issue!")
+                        
+                except discord.Forbidden:
+                    logger.error(f"PERMISSION DENIED: Bot cannot read message history in #{channel.name}")
+                    
             return messages
         
         except discord.Forbidden:
-            logger.error(f"No permission to read messages in #{channel.name}")
+            logger.error(f"PERMISSION DENIED: No permission to read messages in #{channel.name}")
+            logger.error("Please check bot permissions: View Channel, Read Message History, Send Messages")
             return []
         except Exception as e:
             logger.error(f"Error fetching messages: {e}")
