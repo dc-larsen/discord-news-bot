@@ -2,6 +2,9 @@
 
 A Discord bot that automatically summarizes daily news articles and discussions using OpenAI's GPT, running on GitHub Actions.
 
+<img width="1246" height="1154" alt="image" src="https://github.com/user-attachments/assets/f702f078-a332-4629-8c82-2cbe113746d6" />
+
+
 ## Features
 
 - 📰 Automatically processes Discord channel messages daily
