@@ -1,3 +1,4 @@
 discord.py==2.3.2
 openai==1.35.15
 httpx==0.25.2
+beautifulsoup4==4.12.2

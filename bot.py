@@ -8,16 +8,19 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 
 import discord
+import httpx
 import openai
+from bs4 import BeautifulSoup
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
@@ -48,6 +51,12 @@ class NewsBot:
         
         # Initialize OpenAI client - simplified
         self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
+        
+        # Initialize HTTP client for web fetching
+        self.http_client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Discord News Bot)"}
+        )
         
         logger.info("NewsBot initialized successfully")
 
@@ -130,8 +139,46 @@ class NewsBot:
             logger.error(f"Error fetching messages: {e}")
             return []
 
-    def prepare_content_for_summary(self, messages: List[discord.Message]) -> str:
-        """Prepare message content for OpenAI summarization."""
+    def extract_urls(self, text: str) -> List[str]:
+        """Extract URLs from text content."""
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+(?:\.[^\s<>"{}|\\^`\[\]]+)*'
+        urls = re.findall(url_pattern, text)
+        logger.debug(f"Extracted {len(urls)} URLs from text: {urls}")
+        return urls
+
+    async def fetch_web_content(self, url: str) -> Optional[str]:
+        """Fetch and extract text content from a web page."""
+        try:
+            logger.info(f"Fetching content from: {url}")
+            response = await self.http_client.get(url, follow_redirects=True)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Remove script and style elements
+            for script in soup(["script", "style", "nav", "footer", "header"]):
+                script.decompose()
+            
+            # Extract text content
+            text = soup.get_text()
+            
+            # Clean up whitespace
+            lines = (line.strip() for line in text.splitlines())
+            text = ' '.join(line for line in lines if line)
+            
+            # Limit content size for OpenAI
+            if len(text) > 8000:
+                text = text[:8000] + "... [Content truncated]"
+            
+            logger.info(f"Successfully fetched {len(text)} characters from {url}")
+            return text
+            
+        except Exception as e:
+            logger.error(f"Error fetching content from {url}: {e}")
+            return None
+
+    async def prepare_content_for_summary(self, messages: List[discord.Message]) -> str:
+        """Prepare message content for OpenAI summarization by extracting and fetching URLs."""
         if not messages:
             logger.warning("prepare_content_for_summary called with no messages")
             return ""
@@ -142,7 +189,6 @@ class NewsBot:
         for i, msg in enumerate(messages):
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
             author = msg.author.display_name
-            content = msg.content[:500]  # Limit message length
             
             logger.debug(f"Message {i+1}: {timestamp} {author} - Content length: {len(msg.content)}")
             if len(msg.content) > 0:
@@ -150,17 +196,30 @@ class NewsBot:
             else:
                 logger.debug("  Content is empty")
             
-            if content.strip():
+            # Extract URLs from the message content
+            urls = self.extract_urls(msg.content)
+            
+            if urls:
+                logger.info(f"Found {len(urls)} URLs in message {i+1}")
+                for url in urls:
+                    web_content = await self.fetch_web_content(url)
+                    if web_content:
+                        content_parts.append(f"[{timestamp}] {author} shared: {url}\n\nArticle Content: {web_content}")
+                    else:
+                        content_parts.append(f"[{timestamp}] {author} shared: {url}\n\n[Could not fetch content]")
+            elif msg.content.strip():
+                # Fallback to original message content if no URLs
+                content = msg.content[:500]  # Limit message length
                 content_parts.append(f"[{timestamp}] {author}: {content}")
             else:
-                logger.debug(f"  Skipping message {i+1} - content is empty after strip")
+                logger.debug(f"  Skipping message {i+1} - no content or URLs")
         
         logger.info(f"Valid content parts: {len(content_parts)} out of {len(messages)} messages")
         combined_content = "\n\n".join(content_parts)
         
         # Limit total content size
-        if len(combined_content) > 8000:
-            combined_content = combined_content[:8000] + "\n\n[Content truncated due to length...]"
+        if len(combined_content) > 12000:  # Increased limit since we're now fetching article content
+            combined_content = combined_content[:12000] + "\n\n[Content truncated due to length...]"
         
         logger.info(f"Final combined content length: {len(combined_content)}")
         return combined_content
@@ -174,13 +233,15 @@ class NewsBot:
         logger.info(f"Generating summary for {len(content)} characters of content")
         logger.debug(f"Content preview: {content[:200]}...")
         
-        prompt = f"""Please provide a concise summary of the following Discord messages. Focus on:
-- Key news items, articles, or important discussions
-- Main topics and themes
-- Notable links or resources shared
-- Keep it under 300 words
+        prompt = f"""Please provide a concise summary of the following World of Warcraft news articles and Discord messages. Focus on:
+- Key game updates, patches, or features
+- New content releases or announcements
+- Important gameplay changes or balancing
+- Events, rewards, or time-limited content
+- Bug fixes or technical updates
+- Keep it under 400 words and organize by topic if multiple articles
 
-Messages:
+Content:
 {content}
 
 Summary:"""
@@ -194,7 +255,7 @@ Summary:"""
                     {"role": "system", "content": "You are a helpful assistant that summarizes Discord channel activity, focusing on news and important discussions."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=400,
+                max_tokens=500,
                 temperature=0.3
             )
             
@@ -275,7 +336,7 @@ Summary:"""
                 return
             
             # Prepare content and generate summary
-            content = self.prepare_content_for_summary(messages)
+            content = await self.prepare_content_for_summary(messages)
             logger.info(f"Prepared content for summary: {len(content)} characters")
             if len(content) > 0:
                 logger.debug(f"Content sample: {content[:300]}...")
@@ -308,6 +369,14 @@ Summary:"""
         except Exception as e:
             logger.error(f"Error in run_daily_summary: {e}")
             raise
+    
+    async def cleanup(self):
+        """Clean up resources."""
+        try:
+            await self.http_client.aclose()
+            logger.info("HTTP client closed")
+        except Exception as e:
+            logger.error(f"Error closing HTTP client: {e}")
 
 async def main():
     """Main entry point."""
@@ -317,8 +386,11 @@ async def main():
         @bot.client.event
         async def on_ready():
             logger.info(f"Bot logged in as {bot.client.user}")
-            await bot.run_daily_summary()
-            await bot.client.close()
+            try:
+                await bot.run_daily_summary()
+            finally:
+                await bot.cleanup()
+                await bot.client.close()
         
         await bot.client.start(bot.discord_token)
         
