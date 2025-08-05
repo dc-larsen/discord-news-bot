@@ -190,17 +190,33 @@ class NewsBot:
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
             author = msg.author.display_name
             
-            logger.debug(f"Message {i+1}: {timestamp} {author} - Content length: {len(msg.content)}")
+            logger.info(f"Message {i+1}: {timestamp} {author} - Content length: {len(msg.content)}, Embeds: {len(msg.embeds)}")
             if len(msg.content) > 0:
-                logger.debug(f"  Content preview: {msg.content[:100]}...")
+                logger.info(f"  Content preview: {msg.content[:100]}...")
             else:
-                logger.debug("  Content is empty")
+                logger.info("  Content is empty")
+            
+            # Log embed info for debugging
+            for j, embed in enumerate(msg.embeds):
+                logger.info(f"  Embed {j+1}: URL={embed.url}, Title={embed.title[:50] if embed.title else None}")
             
             # Extract URLs from the message content
             urls = self.extract_urls(msg.content)
             
+            # Also check embeds for URLs
+            for embed in msg.embeds:
+                if embed.url:
+                    urls.append(embed.url)
+                if embed.description:
+                    urls.extend(self.extract_urls(embed.description))
+                if embed.title:
+                    urls.extend(self.extract_urls(embed.title))
+            
+            # Remove duplicates
+            urls = list(set(urls))
+            
             if urls:
-                logger.info(f"Found {len(urls)} URLs in message {i+1}")
+                logger.info(f"Found {len(urls)} URLs in message {i+1}: {urls}")
                 for url in urls:
                     web_content = await self.fetch_web_content(url)
                     if web_content:
@@ -212,7 +228,7 @@ class NewsBot:
                 content = msg.content[:500]  # Limit message length
                 content_parts.append(f"[{timestamp}] {author}: {content}")
             else:
-                logger.debug(f"  Skipping message {i+1} - no content or URLs")
+                logger.info(f"  Skipping message {i+1} - no content or URLs found in message or embeds")
         
         logger.info(f"Valid content parts: {len(content_parts)} out of {len(messages)} messages")
         combined_content = "\n\n".join(content_parts)
