@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 
 import discord
-from openai import OpenAI
+import openai
 
 # Configure logging
 logging.basicConfig(
@@ -43,7 +43,7 @@ class NewsBot:
         self.client = discord.Client(intents=intents)
         
         # Initialize OpenAI client
-        self.openai_client = OpenAI(api_key=self.openai_api_key)
+        self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
         
         logger.info("NewsBot initialized successfully")
 
