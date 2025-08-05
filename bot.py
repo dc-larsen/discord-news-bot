@@ -17,7 +17,7 @@ import openai
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
@@ -133,29 +133,46 @@ class NewsBot:
     def prepare_content_for_summary(self, messages: List[discord.Message]) -> str:
         """Prepare message content for OpenAI summarization."""
         if not messages:
+            logger.warning("prepare_content_for_summary called with no messages")
             return ""
         
+        logger.info(f"Preparing content from {len(messages)} messages")
         content_parts = []
-        for msg in messages:
+        
+        for i, msg in enumerate(messages):
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
             author = msg.author.display_name
             content = msg.content[:500]  # Limit message length
             
+            logger.debug(f"Message {i+1}: {timestamp} {author} - Content length: {len(msg.content)}")
+            if len(msg.content) > 0:
+                logger.debug(f"  Content preview: {msg.content[:100]}...")
+            else:
+                logger.debug("  Content is empty")
+            
             if content.strip():
                 content_parts.append(f"[{timestamp}] {author}: {content}")
+            else:
+                logger.debug(f"  Skipping message {i+1} - content is empty after strip")
         
+        logger.info(f"Valid content parts: {len(content_parts)} out of {len(messages)} messages")
         combined_content = "\n\n".join(content_parts)
         
         # Limit total content size
         if len(combined_content) > 8000:
             combined_content = combined_content[:8000] + "\n\n[Content truncated due to length...]"
         
+        logger.info(f"Final combined content length: {len(combined_content)}")
         return combined_content
 
     async def generate_summary(self, content: str) -> Optional[str]:
         """Generate AI summary using OpenAI."""
         if not content.strip():
+            logger.warning("generate_summary called with empty content")
             return None
+        
+        logger.info(f"Generating summary for {len(content)} characters of content")
+        logger.debug(f"Content preview: {content[:200]}...")
         
         prompt = f"""Please provide a concise summary of the following Discord messages. Focus on:
 - Key news items, articles, or important discussions
@@ -169,6 +186,7 @@ Messages:
 Summary:"""
 
         try:
+            logger.info("Making OpenAI API call...")
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
                 model="gpt-3.5-turbo",
@@ -180,12 +198,31 @@ Summary:"""
                 temperature=0.3
             )
             
-            summary = response.choices[0].message.content.strip()
-            logger.info("Successfully generated AI summary")
+            logger.info("OpenAI API call completed successfully")
+            logger.debug(f"Response object: {response}")
+            
+            if not response.choices:
+                logger.error("OpenAI response has no choices")
+                return None
+                
+            if not response.choices[0].message:
+                logger.error("OpenAI response choice has no message")
+                return None
+                
+            summary = response.choices[0].message.content
+            if not summary:
+                logger.error("OpenAI response message content is empty")
+                return None
+                
+            summary = summary.strip()
+            logger.info(f"Successfully generated AI summary ({len(summary)} characters)")
+            logger.debug(f"Summary preview: {summary[:100]}...")
             return summary
             
         except Exception as e:
-            logger.error(f"Error generating summary with OpenAI: {e}")
+            logger.error(f"Error generating summary with OpenAI: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return None
 
     async def send_summary(self, channel: discord.TextChannel, summary: str, message_count: int, date_range: str) -> bool:
@@ -239,6 +276,12 @@ Summary:"""
             
             # Prepare content and generate summary
             content = self.prepare_content_for_summary(messages)
+            logger.info(f"Prepared content for summary: {len(content)} characters")
+            if len(content) > 0:
+                logger.debug(f"Content sample: {content[:300]}...")
+            else:
+                logger.warning("Prepared content is empty!")
+            
             summary = await self.generate_summary(content)
             
             if not summary:
