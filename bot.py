@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Discord News Bot - Daily Article Summarizer
-Fetches messages from Discord channels and creates AI-powered summaries.
+Clean version without potential conflicts
 """
 
 import asyncio
@@ -25,11 +25,13 @@ logger = logging.getLogger(__name__)
 
 class NewsBot:
     def __init__(self):
+        # Environment variables
         self.discord_token = os.getenv('DISCORD_BOT_TOKEN')
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         self.channel_id = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
         self.state_file = 'state.json'
         
+        # Validate environment variables
         if not self.discord_token:
             raise ValueError("DISCORD_BOT_TOKEN environment variable is required")
         if not self.openai_api_key:
@@ -42,7 +44,7 @@ class NewsBot:
         intents.message_content = True
         self.client = discord.Client(intents=intents)
         
-        # Initialize OpenAI client
+        # Initialize OpenAI client - simplified
         self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
         
         logger.info("NewsBot initialized successfully")
@@ -116,7 +118,7 @@ class NewsBot:
         
         combined_content = "\n\n".join(content_parts)
         
-        # Limit total content size (approximately 8000 chars to stay under token limits)
+        # Limit total content size
         if len(combined_content) > 8000:
             combined_content = combined_content[:8000] + "\n\n[Content truncated due to length...]"
         
@@ -127,7 +129,7 @@ class NewsBot:
         if not content.strip():
             return None
         
-        prompt = """Please provide a concise summary of the following Discord messages. Focus on:
+        prompt = f"""Please provide a concise summary of the following Discord messages. Focus on:
 - Key news items, articles, or important discussions
 - Main topics and themes
 - Notable links or resources shared
@@ -144,7 +146,7 @@ Summary:"""
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that summarizes Discord channel activity, focusing on news and important discussions."},
-                    {"role": "user", "content": prompt.format(content=content)}
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=400,
                 temperature=0.3
